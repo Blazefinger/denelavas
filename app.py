@@ -1,88 +1,288 @@
 import os
 from datetime import datetime, timezone
+
 import requests
 from flask import Flask, request, render_template_string, jsonify
 
 app = Flask(__name__)
 
-EVOCON_AUTH = os.getenv("EVOCON_AUTH")  # Base64(user:password)
-EVOCON_URL = "https://api.evocon.com/api/checklists/9897e575-882a-40f3-ad1e-1aad4577dafa"
+# =========================
+# CONFIG (Railway Variables)
+# =========================
+EVOCON_AUTH = os.getenv("EVOCON_AUTH")  # Base64(username:password)  (NO "Basic " prefix)
+CHECKLIST_ID = os.getenv("EVOCON_CHECKLIST_ID", "9897e575-882a-40f3-ad1e-1aad4577dafa")
+STATION_ID = os.getenv("EVOCON_STATION_ID", "2")
+CHECKLIST_NAME = os.getenv("EVOCON_CHECKLIST_NAME", "ΠΑΛΕΤΑ")
 
-HTML = """
+EVOCON_URL = f"https://api.evocon.com/api/checklists/{CHECKLIST_ID}"
+
+# IMPORTANT: set correct element id for pallet number in your checklist
+PALLET_ELEMENT_ID = os.getenv("EVOCON_PALLET_ELEMENT_ID", "2")
+
+
+# =========================
+# HTML (your layout)
+# =========================
+HTML = r"""
 <!doctype html>
 <html lang="el">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Checklist Post</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; margin: 24px; }
-    .card { max-width: 520px; padding: 16px; border: 1px solid #ddd; border-radius: 12px; }
-    label { display:block; margin: 12px 0 6px; }
-    input, select, button { width: 100%; padding: 10px; font-size: 16px; }
-    button { margin-top: 14px; cursor: pointer; }
-    small { color:#666; }
-  </style>
+<meta charset="utf-8">
+<title>Denelpack Pallet Label</title>
+
+<style>
+  @page { size: A4; margin: 0; }
+
+  body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: white;
+  }
+
+  .sheet {
+    width: 210mm;
+    height: 297mm;
+    padding: 10mm;
+    box-sizing: border-box;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1.2fr;
+    border-top: 2px solid #000;
+    border-bottom: 2px solid #000;
+    padding: 6mm 0;
+  }
+
+  .cell .label {
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .cell .value {
+    font-size: 34px;
+    font-weight: 900;
+    margin-top: 2mm;
+  }
+
+  .date .value {
+    font-size: 54px;
+    text-align: center;
+  }
+
+  .mid {
+    display: grid;
+    grid-template-columns: 1fr 0.8fr;
+    margin-top: 6mm;
+    border-bottom: 2px solid #000;
+    padding-bottom: 6mm;
+  }
+
+  .leftGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6mm;
+  }
+
+  .small {
+    font-size: 18px;
+    font-weight: 800;
+  }
+
+  .palletInput {
+    font-size: 56px;
+    font-weight: 900;
+    border: none;
+    outline: none;
+    background: transparent;
+    width: 120px;
+  }
+
+  .title {
+    font-size: 54px;
+    font-weight: 900;
+    margin: 10mm 0;
+  }
+
+  .weights {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10mm;
+    border-top: 2px solid #000;
+    padding-top: 6mm;
+  }
+
+  .weights h3 {
+    font-size: 28px;
+    font-weight: 900;
+    margin-bottom: 6mm;
+  }
+
+  .big {
+    font-size: 46px;
+    font-weight: 900;
+  }
+
+  .submitBtn {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    font-size: 18px;
+    padding: 12px 24px;
+  }
+
+  @media print {
+    .submitBtn { display: none; }
+  }
+</style>
 </head>
+
 <body>
-  <div class="card">
-    <h2>ΠΑΛΕΤΑ — Post to Evocon</h2>
 
-    <form method="POST" action="/submit">
-      <label for="value">Value (Element id=1)</label>
-      <input id="value" name="value" type="number" step="any" required placeholder="e.g. 12" />
+<form method="POST" action="/submit">
 
-      <label for="stationId">Station</label>
-      <select id="stationId" name="stationId" required>
-        <option value="2" selected>2</option>
-        <option value="1">1</option>
-        <option value="3">3</option>
-      </select>
+<div class="sheet">
 
-      <label for="description">Description (optional)</label>
-      <input id="description" name="description" type="text" placeholder="optional note" />
-
-      <small>It will POST to Evocon checklistId 9897e575-882a-40f3-ad1e-1aad4577dafa</small>
-
-      <button type="submit">POST to Evocon</button>
-    </form>
+  <!-- TOP -->
+  <div class="row">
+    <div class="cell">
+      <div class="label">FILM TYPE</div>
+      <div class="value">DS</div>
+    </div>
+    <div class="cell">
+      <div class="label">THICKNESS</div>
+      <div class="value">23MI</div>
+    </div>
+    <div class="cell">
+      <div class="label">WIDTH</div>
+      <div class="value">500mm</div>
+    </div>
+    <div class="cell date">
+      <div class="label">DATE</div>
+      <div class="value">4/11/2025</div>
+    </div>
   </div>
+
+  <!-- LOT -->
+  <div class="row" style="grid-template-columns:1fr 0.6fr 1fr 1.2fr;">
+    <div class="cell">
+      <div class="label">LOT NUMBER</div>
+      <div class="small">00011900</div>
+    </div>
+    <div class="cell">
+      <div class="label">&nbsp;</div>
+      <div class="small">A</div>
+    </div>
+    <div class="cell">
+      <div class="label">BARCODE</div>
+      <div class="small">SD 2</div>
+    </div>
+    <div class="cell"></div>
+  </div>
+
+  <!-- MID -->
+  <div class="mid">
+    <div>
+      <div class="leftGrid">
+        <div>
+          <div class="label">PALLET TYPE</div>
+          <div class="small">80/120</div>
+        </div>
+        <div>
+          <div class="label">ROLLS/PAL</div>
+          <div class="small">16</div>
+        </div>
+        <div></div>
+
+        <div>
+          <div class="label">ΒΑΡΔΙΑ</div>
+          <div class="small">A</div>
+        </div>
+        <div>
+          <div class="label">OPERATOR</div>
+          <div class="small">SD</div>
+        </div>
+        <div>
+          <div class="label">CORE WEIGHT</div>
+          <div class="small">2 KG</div>
+        </div>
+
+        <!-- PALLET NO INPUT -->
+        <div style="grid-column:1 / span 2;">
+          <div class="label">PALLET No</div>
+          <input
+            name="pallet_no"
+            type="number"
+            class="palletInput"
+            value="28"
+            required>
+        </div>
+      </div>
+    </div>
+
+    <!-- ICON PLACEHOLDER -->
+    <div style="display:flex;align-items:center;justify-content:center;font-weight:900;">
+      ICONS
+    </div>
+  </div>
+
+  <!-- PRODUCT -->
+  <div class="title">DS 23M JUMBO ECO</div>
+
+  <!-- WEIGHTS -->
+  <div class="weights">
+    <div>
+      <h3>NET WEIGHT</h3>
+      <div class="big">#VALUE! KG</div>
+    </div>
+    <div>
+      <h3>GROSS WEIGHT</h3>
+      <div class="big">ΠΑΛΕΤΑ KG</div>
+    </div>
+  </div>
+
+</div>
+
+<button class="submitBtn" type="submit">POST TO EVOCON</button>
+
+</form>
+
 </body>
 </html>
 """
+
 
 @app.get("/")
 def home():
     return render_template_string(HTML)
 
-def now_iso_with_offset():
-    # Evocon accepts ISO with timezone; easiest is UTC "Z".
-    return datetime.now(timezone.utc).isoformat()
 
 @app.post("/submit")
 def submit():
+    # Hard fail fast: if auth missing, don't pretend
     if not EVOCON_AUTH:
-        return jsonify({"error": "Missing EVOCON_AUTH env var (Base64 user:password)"}), 500
+        return jsonify({
+            "error": "Missing EVOCON_AUTH Railway variable. It must be Base64(username:password) without 'Basic '."
+        }), 500
 
-    raw_value = request.form.get("value", "").strip()
-    station_id = request.form.get("stationId", "").strip()
-    description = request.form.get("description", "").strip()
-
-    # Hard truth: if you don’t validate, you’ll post garbage and blame the API.
+    pallet_no_raw = (request.form.get("pallet_no") or "").strip()
     try:
-        value = float(raw_value)
+        pallet_no = int(pallet_no_raw)
     except ValueError:
-        return jsonify({"error": f"Invalid value: {raw_value}"}), 400
+        return jsonify({"error": f"Invalid pallet_no: {pallet_no_raw}"}), 400
 
     payload = {
-        "checklistId": "9897e575-882a-40f3-ad1e-1aad4577dafa",
-        "description": description,
-        "eventTimeISO": now_iso_with_offset(),
+        "checklistId": CHECKLIST_ID,
+        "description": "",
+        "eventTimeISO": datetime.now(timezone.utc).isoformat(),
         "elements": [
-            {"id": "1", "value": value}
+            {
+                "id": str(PALLET_ELEMENT_ID),
+                "value": pallet_no
+            }
         ],
-        "stationId": str(station_id),
-        "name": "ΠΑΛΕΤΑ"
+        "stationId": str(STATION_ID),
+        "name": CHECKLIST_NAME
     }
 
     headers = {
@@ -91,16 +291,20 @@ def submit():
         "Authorization": f"Basic {EVOCON_AUTH}",
     }
 
-    r = requests.post(EVOCON_URL, json=payload, headers=headers, timeout=15)
+    try:
+        r = requests.post(EVOCON_URL, json=payload, headers=headers, timeout=15)
+    except requests.RequestException as e:
+        return jsonify({
+            "error": "Request to Evocon failed",
+            "details": str(e),
+            "url": EVOCON_URL,
+            "payload_sent": payload
+        }), 502
 
-    # Return EVERYTHING needed to debug fast (status, payload, Evocon response)
+    # Return full debug. If Evocon rejects, you'll see why immediately.
     return jsonify({
         "posted_to": EVOCON_URL,
         "status_code": r.status_code,
         "payload_sent": payload,
         "evocon_response_text": r.text
     }), r.status_code
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080)
