@@ -6,23 +6,14 @@ from flask import Flask, request, render_template_string, jsonify
 
 app = Flask(__name__)
 
-# =========================
-# CONFIG (Railway Variables)
-# =========================
-EVOCON_AUTH = os.getenv("EVOCON_AUTH")  # Base64(username:password)  (NO "Basic " prefix)
+EVOCON_AUTH = os.getenv("EVOCON_AUTH")  # Base64(username:password) WITHOUT "Basic "
 CHECKLIST_ID = os.getenv("EVOCON_CHECKLIST_ID", "9897e575-882a-40f3-ad1e-1aad4577dafa")
 STATION_ID = os.getenv("EVOCON_STATION_ID", "2")
 CHECKLIST_NAME = os.getenv("EVOCON_CHECKLIST_NAME", "ΠΑΛΕΤΑ")
+PALLET_ELEMENT_ID = os.getenv("EVOCON_PALLET_ELEMENT_ID", "2")  # change if needed
 
 EVOCON_URL = f"https://api.evocon.com/api/checklists/{CHECKLIST_ID}"
 
-# IMPORTANT: set correct element id for pallet number in your checklist
-PALLET_ELEMENT_ID = os.getenv("EVOCON_PALLET_ELEMENT_ID", "2")
-
-
-# =========================
-# HTML (your layout)
-# =========================
 HTML = r"""
 <!doctype html>
 <html lang="el">
@@ -95,7 +86,7 @@ HTML = r"""
     border: none;
     outline: none;
     background: transparent;
-    width: 120px;
+    width: 140px;
   }
 
   .title {
@@ -123,14 +114,17 @@ HTML = r"""
     font-weight: 900;
   }
 
+  /* Submit button visible on screen */
   .submitBtn {
     position: fixed;
     bottom: 20px;
     right: 20px;
     font-size: 18px;
     padding: 12px 24px;
+    cursor: pointer;
   }
 
+  /* Hide submit button when printing */
   @media print {
     .submitBtn { display: none; }
   }
@@ -139,6 +133,7 @@ HTML = r"""
 
 <body>
 
+<!-- THIS form submission is what triggers the POST to Evocon -->
 <form method="POST" action="/submit">
 
 <div class="sheet">
@@ -207,20 +202,15 @@ HTML = r"""
           <div class="small">2 KG</div>
         </div>
 
-        <!-- PALLET NO INPUT -->
+        <!-- PALLET NO INPUT (this is what you post to Evocon) -->
         <div style="grid-column:1 / span 2;">
           <div class="label">PALLET No</div>
-          <input
-            name="pallet_no"
-            type="number"
-            class="palletInput"
-            value="28"
-            required>
+          <input name="pallet_no" type="number" class="palletInput" value="28" required>
         </div>
       </div>
     </div>
 
-    <!-- ICON PLACEHOLDER -->
+    <!-- Icons placeholder (kept same) -->
     <div style="display:flex;align-items:center;justify-content:center;font-weight:900;">
       ICONS
     </div>
@@ -243,6 +233,7 @@ HTML = r"""
 
 </div>
 
+<!-- THIS BUTTON triggers the form submit => /submit => POST to Evocon API -->
 <button class="submitBtn" type="submit">POST TO EVOCON</button>
 
 </form>
@@ -251,18 +242,15 @@ HTML = r"""
 </html>
 """
 
-
 @app.get("/")
 def home():
     return render_template_string(HTML)
 
-
 @app.post("/submit")
 def submit():
-    # Hard fail fast: if auth missing, don't pretend
     if not EVOCON_AUTH:
         return jsonify({
-            "error": "Missing EVOCON_AUTH Railway variable. It must be Base64(username:password) without 'Basic '."
+            "error": "EVOCON_AUTH missing. Set it in Railway Variables as Base64(username:password) WITHOUT 'Basic '"
         }), 500
 
     pallet_no_raw = (request.form.get("pallet_no") or "").strip()
@@ -276,10 +264,7 @@ def submit():
         "description": "",
         "eventTimeISO": datetime.now(timezone.utc).isoformat(),
         "elements": [
-            {
-                "id": str(PALLET_ELEMENT_ID),
-                "value": pallet_no
-            }
+            {"id": str(PALLET_ELEMENT_ID), "value": pallet_no}
         ],
         "stationId": str(STATION_ID),
         "name": CHECKLIST_NAME
@@ -295,16 +280,18 @@ def submit():
         r = requests.post(EVOCON_URL, json=payload, headers=headers, timeout=15)
     except requests.RequestException as e:
         return jsonify({
-            "error": "Request to Evocon failed",
+            "error": "Failed to reach Evocon",
             "details": str(e),
             "url": EVOCON_URL,
             "payload_sent": payload
         }), 502
 
-    # Return full debug. If Evocon rejects, you'll see why immediately.
     return jsonify({
         "posted_to": EVOCON_URL,
         "status_code": r.status_code,
         "payload_sent": payload,
         "evocon_response_text": r.text
     }), r.status_code
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8080)
